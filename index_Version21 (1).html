@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>dhtmlxGantt + Google Sheets Projects</title>
+  <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
+  <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
+  <style>
+    html, body { height: 100%; padding: 0; margin: 0; }
+    #gantt_here { width: 100%; height: 600px; }
+    #projectbar { margin: 1em; }
+    .new-project-input { margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <div id="projectbar">
+    <select id="projectSelect"></select>
+    <input type="text" id="newProjectName" class="new-project-input" placeholder="New project name">
+    <button onclick="showNewProject()">New Project</button>
+  </div>
+  <div id="gantt_here"></div>
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbx0o1J5og7zgylK_DFd0SUMP7gLKtGpTA-7yIUNo7tAVl2HlkC209wzBl7GTlLOh14TSA/exec"; // <-- Put your Apps Script Web App URL here
+
+    let currentProject = "";
+
+    async function fetchProjects() {
+      const res = await fetch(API_URL + "?doGetProjects=1");
+      const data = await res.json().catch(()=>({projects:["Sheet1"]}));
+      return data.projects || ["Sheet1"];
+    }
+
+    async function populateProjects() {
+      const projects = await fetchProjects();
+      const sel = document.getElementById('projectSelect');
+      sel.innerHTML = projects.map(p =>
+        `<option value="${p}">${p}</option>`).join('');
+      currentProject = sel.value = projects[0];
+      sel.onchange = () => {
+        currentProject = sel.value;
+        loadGanttData();
+      };
+    }
+
+    function showNewProject() {
+      const name = document.getElementById("newProjectName").value.trim();
+      if(!name) {
+        alert("Please enter a project name.");
+        return;
+      }
+      createProject(name);
+    }
+
+    async function createProject(name) {
+      const res = await fetch(API_URL, {
+        method:"POST",
+        body: JSON.stringify({action:"create_project", project:name}),
+        headers: {"Content-Type":"application/json"}
+      });
+      const data = await res.json();
+      if(data.ok){
+        await populateProjects();
+        document.getElementById('projectSelect').value = name;
+        currentProject = name;
+        loadGanttData();
+        document.getElementById("newProjectName").value = "";
+      } else {
+        alert(data.error || "Could not create project");
+      }
+    }
+
+    gantt.config.xml_date = "%Y-%m-%d";
+    gantt.init("gantt_here");
+
+    function loadGanttData() {
+      fetch(API_URL + "?project=" + encodeURIComponent(currentProject))
+        .then(res => res.json())
+        .then(data => gantt.parse(data));
+    }
+
+    new gantt.dataProcessor(function(entity, action, data, id) {
+      return new Promise((resolve, reject) => {
+        if(["update","insert","delete"].includes(action)){
+          const body = {
+            ...data,
+            id,
+            action: action === "insert" ? "inserted" : action + "d",
+            project: currentProject
+          };
+          fetch(API_URL, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" }
+          })
+          .then(res => res.json().catch(()=>({})))
+          .then(resp => {
+            if(action === "insert" && resp.tid){
+              resolve({id: resp.tid});
+            } else {
+              resolve();
+            }
+            setTimeout(loadGanttData, 500);
+          });
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Initial load
+    populateProjects().then(loadGanttData);
+  </script>
+</body>
+</html>
