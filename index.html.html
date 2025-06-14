@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>dhtmlxGantt with Google Sheets</title>
+  <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
+  <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
+  <style>
+    html, body { height: 100%; padding: 0; margin: 0; }
+    #gantt_here { width: 100%; height: 600px; }
+  </style>
+</head>
+<body>
+  <div id="gantt_here"></div>
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbx1XCJV-LU6YiSaUB690MNVCoNLOvmqATUj6lO2svhMwkui2li7tIaokAJ8WSKeMqL6xA/exec"; // Replace with your Apps Script Web App URL
+
+    gantt.config.xml_date = "%Y-%m-%d";
+    gantt.init("gantt_here");
+
+    function loadGanttData() {
+      fetch(API_URL)
+        .then(res => res.json())
+        .then(data => gantt.parse(data));
+    }
+
+    new gantt.dataProcessor(function(entity, action, data, id) {
+      return new Promise((resolve, reject) => {
+        if(["update","insert","delete"].includes(action)){
+          const body = {
+            ...data,
+            id,
+            action: action === "insert" ? "inserted" : action + "d"
+          };
+          fetch(API_URL, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" }
+          })
+          .then(res => res.json().catch(()=>({})))
+          .then(resp => {
+            if(action === "insert" && resp.tid){
+              resolve({id: resp.tid});
+            } else {
+              resolve();
+            }
+            setTimeout(loadGanttData, 500);
+          });
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    loadGanttData();
+  </script>
+</body>
+</html>
